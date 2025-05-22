@@ -96,28 +96,33 @@ class RPNCalculator:
         """
         try:
             tokens = self.lexical_analyzer(expression.strip())
-
             self.syntactic_analyzer(tokens)
 
-            res_match = re.match(r'^\(\s*(\d+)\s+RES\s*\)$', expression.strip())
-            if res_match:
-                n = int(res_match.group(1))
-                if n < len(self.results):
-                    return self.convertFloatToHalf(self.results[-(n+1)])
-                else:
-                    raise ValueError(f"Error: There are not {n} previous results.")
-                
-            mem_store_match = re.match(r'^\(\s*([0-9.+-]+)\s+MEM\s*\)$', expression.strip())
-            if mem_store_match:
-                value = float(mem_store_match.group(1))
-                self.memory = self.convertFloatToHalf(value)
-                return self.memory
-            
+            expr = expression.split()
+
+            if expr.startswith('(') and expr.endswith(')'):
+                inner = expr[1:-1].strip()
+                parts= inner.split()
+                if len(parts) == 2 and parts[1].upper() == 'RES' and parts[0].isdigit():
+                    n = int(parts[0])
+                    if n < len(self.results):
+                        return self.convertFloatToHalf(self.results[-(n+1)])
+                    else:
+                        raise ValueError(f"Erro: Não há {n} resultados anteriores.")
+                if len(parts) == 2 and parts[1].upper() == 'MEM':
+                    try:
+                        value = float(parts[0])
+                        self.memory = self.convertFloatToHalf(value)
+                        return self.memory
+                    except ValueError:
+                        raise ValueError(f"Erro: '{parts[0]}' não é um número válido.")
+                if len(parts) == 1 and parts[0].upper() == 'MEM':
+                    return self.memory
             return self.evaluate_tokens(self.tokenize_expression(expression))
-        except Exception as e:
-            print(f"Error evaluating expression '{expression}': {str(e)}")
+        except ValueError as e:
+            print(f"Erro ao avaliar a expressão: {str(e)}")
             return None
-    
+            
     def evaluate_tokens(self, expression):
         """
         Evaluates a list of tokens in RPN notation and returns the result.
@@ -129,18 +134,34 @@ class RPNCalculator:
         Returns:
             Result of the token evaluation
         """
-        try:
-            tokens = self.lexical_analyzer(expression.strip())
-            self.syntactic_analyzer(tokens)
-
-            expr = expression.split().replace('(', ' ').replace(')', ' ').split()
-            if len(expr) == 2 and expr[1].upper() == 'RES' and expr[0].isdigit():
-                n = int(expr[0])
-                if n < len(self.results):
-                    return self.convertFloatToHalf(self.results[-(n+1)])
-                else:
-                    raise ValueError(f"Error: There are not {n} previous results.")
-                # Continuar aqui
+        tokens = []
+        i = 0
+        n = len(expression)
+        while i < n:
+            if expression[i].isspace():
+                i += 1
+                continue
+            if expression[i] in '()+-*/^%|':
+                tokens.append(expression[i])
+                i += 1
+                continue
+            if expression[i].isdigit() or expression[i] == '.':
+                start = i
+                has_decimal = False
+                while i < n and (expression[i].isdigit() or (expression[i] == '.' and not has_decimal)):
+                    if expression[i] == '.':
+                        has_decimal = True
+                    i += 1
+                tokens.append(expression[start:i])
+                continue
+            if expression[i].isalpha():
+                start = i
+                while i < n and expression[i].isalpha():
+                    i += 1
+                tokens.append(expression[start:i].upper())
+                continue
+            raise ValueError(f"Caractere inválido '{expression[i]}' na posição {i}")
+        return tokens
 
     def operate(self, a, b, operator):
         """
