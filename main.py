@@ -1,5 +1,4 @@
 import sys
-import re
 import struct
 import math
 import os
@@ -202,10 +201,34 @@ class RPNCalculator:
         Returns:
             List of tokens
         """
-        # Clean up the expression
-        expression = expression.strip()
-        # Use regular expressions to split the expression into tokens (now including keywords)
-        return re.findall(r'\d+\.\d+|\d+|[()+\-*/^%|]|[A-Z]+', expression, flags=re.IGNORECASE)
+        tokens = []
+        i = 0
+        n = len(expression)
+        while i < n:
+            if expression[i].issapace():
+                i += 1
+                continue
+            if expression[i] in '()+-*/^%|':
+                tokens.append(expression[i])
+                i += 1
+                continue
+            if expression[i].isdigit() or expression[i] == '.':
+                start = i
+                has_decimal = False
+                while i < n and (expression[i].isdigit() or (expression[i] == '.' and not has_decimal)):
+                    if expression[i] == '.':
+                        has_decimal = True
+                    i += 1
+                tokens.append(expression[start:i])
+                continue
+            if expression[i].isalpha():
+                start = i
+                while i < n and expression[i].isalpha():
+                    i += 1
+                tokens.append(expression[start:i].upper())
+                continue
+            raise ValueError(f"Invalid character '{expression[i]}' at position {i}")
+        return tokens
     
     def process_input(self, path):
         """
