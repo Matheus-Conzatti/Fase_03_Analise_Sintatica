@@ -131,7 +131,9 @@ class RPNCalculator:
              return 0x7C00 # Infinity for very large numbers
 
     def convertHalfToFloat(self, f16):
-        """Converte half-precision (16 bits) para float IEEE 754."""
+        """
+            Converte half-precision (16 bits) para float IEEE 754.
+        """
         # Implementação original mantida... (verificar correção se for usar)
         sign = (f16 >> 15) & 0x1
         exponent = (f16 >> 10) & 0x1F
@@ -229,17 +231,23 @@ class RPNCalculator:
 
     # --- Métodos Auxiliares para o Parser LL(1) ---
     def _get_current_token(self):
-        """Retorna o token atual sem avançar."""
+        """
+            Retorna o token atual sem avançar.
+        """
         if self.token_index < len(self.tokens):
             return self.tokens[self.token_index]
         return 'EOF' # Marca o fim da entrada
 
     def _advance_token(self):
-        """Avança para o próximo token."""
+        """
+            Avança para o próximo token.
+        """
         self.token_index += 1
 
     def _expect(self, expected_token_value):
-        """Verifica se o token atual é o esperado e avança."""
+        """
+            Verifica se o token atual é o esperado e avança.
+        """
         current_token = self._get_current_token()
         if current_token == expected_token_value:
             self._advance_token()
@@ -252,8 +260,8 @@ class RPNCalculator:
     # --- Analisador Sintático LL(1) (Descida Recursiva) e Construtor da AST ---
     def parse_line_to_ast(self):
         """
-        Ponto de entrada do parser para uma única linha (declaração/expressão).
-        Assume que cada linha do arquivo é uma 'Declaracao' ou 'Expressao' de nível superior.
+            Ponto de entrada do parser para uma única linha (declaração/expressão).
+            Assume que cada linha do arquivo é uma 'Declaracao' ou 'Expressao' de nível superior.
         """
         # Decide qual regra gramatical seguir com base no lookahead
         current_token = self._get_current_token()
@@ -275,10 +283,10 @@ class RPNCalculator:
 
     def _parse_expression(self):
         """
-        Regra gramatical para Expressao:
-        Expressao ::= '(' Termo Termo OP_ARITMETICA ')'
-                    | ComandoEspecial
-                    | NUMERO
+            Regra gramatical para Expressao:
+            Expressao ::= '(' Termo Termo OP_ARITMETICA ')'
+                        | ComandoEspecial
+                        | NUMERO
         """
         current_token = self._get_current_token()
 
@@ -294,8 +302,7 @@ class RPNCalculator:
                 self._expect(')')
                 return MemAccessNode()
             
-            # Check for (V MEM) or (N RES)
-            # Assumes V or N are always numbers, followed by MEM/RES, then ')'
+            # Check for (RES)
             try:
                 # Tenta consumir um número para V ou N
                 # NÃO AVANÇA TOKEN AINDA, apenas tenta converter para verificar tipo
@@ -384,13 +391,8 @@ class RPNCalculator:
 
     def _parse_for_declaration(self):
         """
-        Regra gramatical para ForDeclaracao:
-        ForDeclaracao ::= '(' 'PARA' ID 'DE' NUMERO 'ATE' NUMERO ('PASSO' NUMERO)? Expressao ')'
-        
-        NOTA: 'ID' aqui é um placeholder. No seu contexto RPN, você pode ter
-        definido IDs como números, ou se introduziu variáveis nomeadas.
-        Se 'ID' for um nome de variável, seu tokenizer e AST precisarão de um TokenNode ou VarNode.
-        Por simplicidade, aqui assumimos que 'ID' pode ser um número, mas isso pode não ser seu caso.
+            Regra gramatical para ForDeclaracao:
+            ForDeclaracao ::= '(' 'PARA' ID 'DE' NUMERO 'ATE' NUMERO ('PASSO' NUMERO)? Expressao ')'
         """
         self._expect('(')
         self._expect('PARA')
