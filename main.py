@@ -6,7 +6,6 @@
     2. Felipe Abdullah
     3. Matheus Conzatti de Souza
 """
-
 import sys
 import struct
 import math
@@ -93,13 +92,11 @@ class ForNode(ASTNode):
         self.step_val_node = step_val_node
         self.body_node = body_node # O corpo do loop (uma Expressao RPN)
 
-
 class RPNCalculator:
     """
-    Implementa uma calculadora para RPN com analisador léxico, sintático (LL(1) + AST)
-    e avaliador para RPN, incluindo comandos especiais e estruturas de controle.
+        Implementa uma calculadora para RPN com analisador léxico, sintático (LL(1) + AST)
+        e avaliador para RPN, incluindo comandos especiais e estruturas de controle.
     """
-
     def __init__(self):
         """Inicializa a calculadora."""
         self.results = []
@@ -153,8 +150,8 @@ class RPNCalculator:
     # --- Análise Léxica (Tokenizador Manual) ---
     def _custom_tokenize(self, expression):
         """
-        Tokeniza a expressão manualmente, sem usar regex.
-        Retorna uma lista de strings.
+            Tokeniza a expressão manualmente, sem usar regex.
+            Retorna uma lista de strings.
         """
         tokens = []
         i = 0
@@ -162,7 +159,6 @@ class RPNCalculator:
         
         while i < n:
             char = expression[i]
-
             if char.isspace():
                 i += 1
                 continue
@@ -200,7 +196,6 @@ class RPNCalculator:
             
             # Caractere inválido
             raise ValueError(f"Caractere inesperado encontrado: '{char}' na posição {i}")
-            
         return tokens
 
     # --- Operações Matemáticas (Permanece o mesmo) ---
@@ -289,10 +284,9 @@ class RPNCalculator:
                         | NUMERO
         """
         current_token = self._get_current_token()
-
         if current_token == '(':
             self._expect('(')
-            
+            # Verifica o próximo token para determinar o tipo de expressão
             first_inner_token = self.tokens[self.token_index] if self.token_index < len(self.tokens) else None
             second_inner_token = self.tokens[self.token_index + 1] if self.token_index + 1 < len(self.tokens) else None
 
@@ -342,10 +336,11 @@ class RPNCalculator:
                               f"Esperado '(', ou NUMERO, encontrado '{current_token}' "
                               f"na expressão: '{self.current_line_content}'")
 
+    # --- Análise Sintática para Termos ---
     def _parse_term(self):
         """
-        Regra gramatical para Termo:
-        Termo ::= Expressao | NUMERO
+            Regra gramatical para Termo:
+            Termo ::= Expressao | NUMERO
         """
         current_token = self._get_current_token()
         if current_token == '(':
@@ -357,6 +352,7 @@ class RPNCalculator:
                               f"Esperado '(', ou NUMERO, encontrado '{current_token}' "
                               f"na expressão: '{self.current_line_content}'")
 
+    # --- Análise Sintática para Números ---
     def _parse_number(self):
         """Cria um nó de número a partir do token atual."""
         token_value = self._get_current_token()
@@ -370,10 +366,11 @@ class RPNCalculator:
                               f"Esperado um número literal, encontrado '{token_value}' "
                               f"na expressão: '{self.current_line_content}'")
 
+    # --- Análise Sintática para Declarações If e For ---
     def _parse_if_declaration(self):
         """
-        Regra gramatical para IfDeclaracao:
-        IfDeclaracao ::= '(' 'SE' Expressao 'ENTAO' Expressao ('SENAO' Expressao)? ')'
+            Regra gramatical para IfDeclaracao:
+            IfDeclaracao ::= '(' 'SE' Expressao 'ENTAO' Expressao ('SENAO' Expressao)? ')'
         """
         self._expect('(')
         self._expect('SE')
@@ -394,17 +391,15 @@ class RPNCalculator:
             Regra gramatical para ForDeclaracao:
             ForDeclaracao ::= '(' 'PARA' ID 'DE' NUMERO 'ATE' NUMERO ('PASSO' NUMERO)? Expressao ')'
         """
-        self._expect('(')
-        self._expect('PARA')
-        
+        self._expect('(') # Verifica se o próximo token é '('
+        self._expect('PARA') # Verifica se o próximo token é 'PARA'
         var_id_node = self._parse_number() # Adapte se 'ID' for um nome literal (string)
-
-        self._expect('DE')
-        start_val_node = self._parse_number()
-        self._expect('ATE')
-        end_val_node = self._parse_number()
-
-        step_val_node = None
+        self._expect('DE') # Verifica se o próximo token é 'DE'
+        start_val_node = self._parse_number() # O valor inicial do laço é um número
+        self._expect('ATE') # Verifica se o próximo token é 'ATE'
+        end_val_node = self._parse_number() # O valor final do laço é um número
+        step_val_node = None # O passo é opcional, então pode ser None
+        # Verifica se o próximo token é 'PASSO' para o passo opcional
         if self._get_current_token() == 'PASSO':
             self._expect('PASSO')
             step_val_node = self._parse_number()
@@ -415,7 +410,9 @@ class RPNCalculator:
 
     # --- Avaliação da AST ---
     def evaluate_ast(self, node):
-        """Percorre a AST e avalia as expressões."""
+        """
+            Percorre a AST e avalia as expressões.
+        """
         if isinstance(node, NumberNode):
             return node.value
         elif isinstance(node, BinOpNode):
@@ -482,12 +479,12 @@ class RPNCalculator:
     # --- Processamento da Expressão (Ponto de Entrada Principal) ---
     def evaluate_expression(self, expression_string):
         """
-        Ponto de entrada para avaliação.
-        1. Tokeniza a expressão.
-        2. Constrói a AST usando o parser LL(1).
-        3. Imprime a AST.
-        4. Avalia a AST.
-        5. Armazena o resultado.
+            Ponto de entrada para avaliação.
+            1. Tokeniza a expressão.
+            2. Constrói a AST usando o parser LL(1).
+            3. Imprime a AST.
+            4. Avalia a AST.
+            5. Armazena o resultado.
         """
         self.current_line_content = expression_string.strip()
         self.tokens = [] # Reinicia tokens para a linha atual
@@ -495,7 +492,6 @@ class RPNCalculator:
 
         if not self.current_line_content or self.current_line_content.startswith('#'):
             return None # Ignora linhas vazias ou comentários
-
         try:
             print(f"Expressão {self.current_line_num}: {self.current_line_content}")
             
@@ -528,7 +524,9 @@ class RPNCalculator:
 
     # --- Relatório de Erro (Permanece o mesmo) ---
     def generate_error_report(self, error_msg):
-        """Gera um relatório de erro."""
+        """
+            Gera um relatório de erro.
+        """
         print("\n=== Relatório de Erro ===")
         print(f"Arquivo: {self.current_file}")
         print(f"Linha: {self.current_line_num}")
@@ -552,7 +550,9 @@ class RPNCalculator:
             print(f"Erro: '{path}' não encontrado.")
 
     def process_file(self, filename):
-        """Processa um arquivo linha por linha."""
+        """
+            Processa um arquivo linha por linha.
+        """
         self.current_file = os.path.basename(filename)
         print(f"\n---- Processando Arquivo: {self.current_file} ----\n")
         
@@ -576,7 +576,9 @@ class RPNCalculator:
 
 # --- Função Principal ---
 def main():
-    """Função principal."""
+    """
+        Função principal.
+    """
     calculator = RPNCalculator()
 
     if len(sys.argv) > 1:
