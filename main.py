@@ -1,177 +1,311 @@
+#!/usr/bin/env python3
+"""
+Trabalho de Compiladores - Analisador Léxico e Sintático para RPN
+Grupo: [NOME DO GRUPO]
+Integrantes:
+1. [Nome 1]
+2. [Nome 2]
+3. [Nome 3]
+"""
+
 import sys
 import struct
 import math
 import os
+from collections import deque
 
 class RPNCalculator:
-    """
-    Implements a calculator for evaluating expressions in Reverse Polish Notation (RPN).
-    Supports basic arithmetic operations, special memory commands, and nested expressions.
-    """
-    
     def __init__(self):
-        """
-        Initializes the RPN calculator with default values.
-        Sets up the list of previous results and memory.
-        """
-        # Stores previous results of expressions
         self.results = []
-        # Memory for (V MEM) command
         self.memory = 0.0
+        self.current_file = ""
+        
+        # Gramática LL(1)
+        self.grammar = {
+            'S': [['(', 'E', ')']],
+            'E': [
+                ['NUMBER', 'NUMBER', 'OPERATOR'],  # Expressão básica
+                ['NUMBER', 'RES'],                 # Comando (N RES)
+                ['NUMBER', 'MEM'],                 # Comando (V MEM)
+                ['MEM'],                           # Comando (MEM)
+                ['(', 'E', ')', '(', 'E', ')', 'OPERATOR']  # Expressão aninhada
+            ]
+        }
+        
+        # Tabela de análise LL(1)
+        self.parsing_table = {
+            'S': {'(': ['(', 'E', ')']},
+            'E': {
+                '(': ['(', 'E', ')', '(', 'E', ')', 'OPERATOR'],
+                'NUMBER': ['NUMBER', 'NUMBER', 'OPERATOR'],
+                'RES': ['NUMBER', 'RES'],
+                'MEM': ['MEM'] if 'MEM' in self.grammar['E'][3] else ['NUMBER', 'MEM']
+            }
+        }
+
+    def convert_float_to_half(self, f):
+        """
+            Converte float para half-precision (16 bits) IEEE 754
+        """
+        f32 = struct.unpack('>I', struct.pack('>f', f))[0]
+        
+        sign = (f32 >> 31) & 0x1
+        exponent = ((f32 >> 23) & 0xFF) - 127
+        mantissa = f32 & 0x007FFFFF
+
+        # Handle special cases
+        if exponent > 15:
+            return 0x7C00 | (sign << 15)  # Infinity
+        if exponent < -14:
+            return sign << 15  # Zero
+
+        # Convert to half-precision
+        exponent_half = exponent + 15
+        mantissa_half = mantissa >> 13
+        
+        # Rounding
+        if (mantissa >> 12) & 0x1:
+            mantissa_half += 1
+            if mantissa_half == 0x400:
+                mantissa_half = 0
+                exponent_half += 1
+                if exponent_half == 31:
+                    return 0x7C00 | (sign << 15)
+
+        return (sign << 15) | (exponent_half << 10) | mantissa_half
     
-    def convertFloatToHalf(self, f):
+    def convert_half_to_float(self, f16):
         """
-        Converts a number to half-precision (16 bits) according to IEEE754 standard.
-        
-        Parameters:
-            value: Float value to be converted
-        Returns:
-            Value converted to half-precision (16 bits) representation
+            Converte half-precision (16 bits) para float IEEE 754
         """
-        # Converts float to bits (uint32)
-        bin_f = struct.unpack('>I', struct.pack('>f', f))[0]
+        sign = (f16 >> 15) & 0x1
+        exponent = (f16 >> 10) & 0x1F
+        mantissa = f16 & 0x03FF
 
-        sinal = (bin_f >> 16) & 0x8000
-        exp = ((bin_f >> 23) & 0xFF) - 127 + 15
-        mantissa = (bin_f >> 13) & 0x03FF
+        if exponent == 0:
+            if mantissa == 0:
+                return 0.0 if not sign else -0.0
+            # Subnormal number
+            f = mantissa / 1024.0
+            return math.ldexp(f, -14) * (-1 if sign else 1)
+        elif exponent == 0x1F:
+            if mantissa == 0:
+                return float('inf') if not sign else float('-inf')
+            return float('nan')
 
-        if exp <= 0:
-            return sinal # Subnormal or zero
-        elif exp >= 31:
-            return sinal | 0x7C00 # Infinity or NaN
-        return sinal | (exp << 10) | mantissa
-    
-    def convertHalfToFloat(self, f16):
-        """
-        Converts a half-precision (16 bits) number to float according to IEEE754 standard.
-        
-        Parameters:
-            f16: Value in half-precision (16 bits) to be converted
-        Returns:
-            Value converted to float
-        """
-        sinal = (f16 >> 15) & 0x1
-        exp = (f16 >> 10) & 0x1F
-        frac = f16 & 0x03FF
-        f32Sinal = sinal << 31
-        f32Exp = 0
-        f32Frac = 0
+        # Normal number
+        exponent -= 15
+        mantissa += 1024  # Add implicit leading 1
+        f32 = (sign << 31) | ((exponent + 127) << 23) | (mantissa << 13)
+        return struct.unpack('>f', struct.pack('>I', f32))[0]
 
-        if exp == 0:
-            if frac == 0:
-                f32Sinal = 0
-                f32Frac = 0
-            else:
-                exp = 1
-                while (frac & 0x0400) == 0:
-                    frac <<= 1
-                    exp -= 1
-                frac &= 0x03FF
-                f32Exp = (127 - 15 + exp) << 23
-                f32Frac = frac << 13
-        elif exp == 0x1F:
-            f32Exp = 0xFF << 23
-            f32Frac = frac << 13
-        else:
-            f32Exp = (exp + (127 - 15)) << 23
-            f32Frac = frac << 13
-        
-        f32Bits = f32Sinal | f32Exp | f32Frac
-        return struct.unpack('>f', struct.pack('>I', f32Bits))[0]
-
-    def evaluate_expression(self, expression):
+    def lexical_analyzer(self, expression):
         """
-        Evaluates an RPN expression and returns the final result.
-        Supports special commands such as (N RES), (V MEM), and (MEM).
-        
-        - If you write (2 RES), it will retrieve the result calculated 2 lines ago
-        - If you write (5 MEM), it will store the number 5 in the calculator's memory
-        - If you write (MEM), it will retrieve the number stored in memory
-        
-        Parameters:
-            expression: String containing the RPN expression to be evaluated
-        Returns:
-            Result of the expression evaluation
-        """
-        try:
-            tokens = self.lexical_analyzer(expression.strip())
-            self.syntactic_analyzer(tokens)
-
-            expr = expression.split()
-
-            if expr.startswith('(') and expr.endswith(')'):
-                inner = expr[1:-1].strip()
-                parts= inner.split()
-                if len(parts) == 2 and parts[1].upper() == 'RES' and parts[0].isdigit():
-                    n = int(parts[0])
-                    if n < len(self.results):
-                        return self.convertFloatToHalf(self.results[-(n+1)])
-                    else:
-                        raise ValueError(f"Erro: Não há {n} resultados anteriores.")
-                if len(parts) == 2 and parts[1].upper() == 'MEM':
-                    try:
-                        value = float(parts[0])
-                        self.memory = self.convertFloatToHalf(value)
-                        return self.memory
-                    except ValueError:
-                        raise ValueError(f"Erro: '{parts[0]}' não é um número válido.")
-                if len(parts) == 1 and parts[0].upper() == 'MEM':
-                    return self.memory
-            return self.evaluate_tokens(self.tokenize_expression(expression))
-        except ValueError as e:
-            print(f"Erro ao avaliar a expressão: {str(e)}")
-            return None
-            
-    def evaluate_tokens(self, expression):
-        """
-        Evaluates a list of tokens in RPN notation and returns the result.
-        Handles the logic for processing expressions, operand stack, and nested sub-expressions.
-        
-        Parameters:
-            tokens: List of tokens (operands, operators, and parentheses)
-            
-        Returns:
-            Result of the token evaluation
+            Analisador léxico que retorna tokens com posições
         """
         tokens = []
         i = 0
         n = len(expression)
+        line = 1
+        column = 1
+        
         while i < n:
             if expression[i].isspace():
+                if expression[i] == '\n':
+                    line += 1
+                    column = 1
+                else:
+                    column += 1
                 i += 1
                 continue
-            if expression[i] in '()+-*/^%|':
-                tokens.append(expression[i])
-                i += 1
-                continue
+                
+            # Números (inteiros ou decimais)
             if expression[i].isdigit() or expression[i] == '.':
                 start = i
+                start_col = column
                 has_decimal = False
-                while i < n and (expression[i].isdigit() or (expression[i] == '.' and not has_decimal)):
+                while i < n and (expression[i].isdigit() or expression[i] == '.'):
                     if expression[i] == '.':
+                        if has_decimal:
+                            raise ValueError(f"Erro léxico: Número com ponto decimal duplo (linha {line}, coluna {column})")
                         has_decimal = True
                     i += 1
-                tokens.append(expression[start:i])
+                    column += 1
+                
+                num_str = expression[start:i]
+                if num_str.endswith('.'):
+                    raise ValueError(f"Erro léxico: Número termina com ponto (linha {line}, coluna {column-1})")
+                
+                tokens.append({
+                    'value': num_str,
+                    'type': 'NUMBER',
+                    'line': line,
+                    'column': start_col
+                })
                 continue
+                
+            # Operadores
+            if expression[i] in '+-*/%^|':
+                tokens.append({
+                    'value': expression[i],
+                    'type': 'OPERATOR',
+                    'line': line,
+                    'column': column
+                })
+                i += 1
+                column += 1
+                continue
+                
+            # Parênteses
+            if expression[i] in '()':
+                tokens.append({
+                    'value': expression[i],
+                    'type': 'PAREN',
+                    'line': line,
+                    'column': column
+                })
+                i += 1
+                column += 1
+                continue
+                
+            # Comandos (RES, MEM)
             if expression[i].isalpha():
                 start = i
+                start_col = column
                 while i < n and expression[i].isalpha():
                     i += 1
-                tokens.append(expression[start:i].upper())
+                    column += 1
+                cmd = expression[start:i].upper()
+                
+                if cmd in ('RES', 'MEM'):
+                    tokens.append({
+                        'value': cmd,
+                        'type': 'COMMAND',
+                        'line': line,
+                        'column': start_col
+                    })
+                else:
+                    raise ValueError(f"Erro léxico: Comando desconhecido '{cmd}' (linha {line}, coluna {start_col})")
                 continue
-            raise ValueError(f"Caractere inválido '{expression[i]}' na posição {i}")
+                
+            raise ValueError(f"Erro léxico: Caractere inválido '{expression[i]}' (linha {line}, coluna {column})")
+        
         return tokens
 
-    def operate(self, a, b, operator):
+    def syntactic_analyzer(self, tokens):
         """
-        Performs the mathematical operation between two operands a and b with the given operator.
+            Analisador sintático LL(1) com geração de AST
+        """
+        stack = deque(['S'])  # Pilha para análise LL(1)
+        ast = {'type': 'Program', 'body': []}
+        i = 0
+        n = len(tokens)
         
-        Parameters:
-            a: First operand (float)
-            b: Second operand (float)
-            operator: Operator (string)
-        Returns:
-            Result of the operation
+        while stack and i < n:
+            top = stack.pop()
+            current_token = tokens[i] if i < n else None
+            
+            if top in self.grammar:
+                # Não-terminal - aplicar regra da gramática
+                if current_token and current_token['value'] in self.parsing_table[top]:
+                    production = self.parsing_table[top][current_token['value']]
+                    # Empilha em ordem reversa
+                    for symbol in reversed(production):
+                        stack.append(symbol)
+                else:
+                    expected = list(self.parsing_table[top].keys())
+                    raise ValueError(
+                        f"Erro sintático: Esperado {expected} mas encontrado '{current_token['value']}' "
+                        f"(linha {current_token['line']}, coluna {current_token['column']})"
+                    )
+            else:
+                # Terminal - verificar correspondência
+                if (top == 'NUMBER' and current_token['type'] == 'NUMBER') or \
+                   (top == 'OPERATOR' and current_token['type'] == 'OPERATOR') or \
+                   (top == 'RES' and current_token['value'] == 'RES') or \
+                   (top == 'MEM' and current_token['value'] == 'MEM') or \
+                   (top == current_token['value']):
+                    
+                    # Construir AST
+                    if top == 'NUMBER':
+                        ast['body'].append({
+                            'type': 'Literal',
+                            'value': float(current_token['value']),
+                            'raw': current_token['value'],
+                            'loc': {
+                                'line': current_token['line'],
+                                'column': current_token['column']
+                            }
+                        })
+                    elif top == 'OPERATOR':
+                        ast['body'].append({
+                            'type': 'Operator',
+                            'value': current_token['value'],
+                            'loc': {
+                                'line': current_token['line'],
+                                'column': current_token['column']
+                            }
+                        })
+                    elif top in ('RES', 'MEM'):
+                        ast['body'].append({
+                            'type': 'Command',
+                            'value': current_token['value'],
+                            'loc': {
+                                'line': current_token['line'],
+                                'column': current_token['column']
+                            }
+                        })
+                    
+                    i += 1
+                else:
+                    raise ValueError(
+                        f"Erro sintático: Esperado '{top}' mas encontrado '{current_token['value']}' "
+                        f"(linha {current_token['line']}, coluna {current_token['column']})"
+                    )
+        
+        if stack:
+            raise ValueError("Erro sintático: Fim inesperado da expressão")
+        
+        return ast
+
+    def evaluate_ast(self, ast):
+        """
+            Avalia a AST gerada pelo analisador sintático
+        """
+        stack = []
+        
+        for node in ast['body']:
+            if node['type'] == 'Literal':
+                stack.append(node['value'])
+            elif node['type'] == 'Operator':
+                if len(stack) < 2:
+                    raise ValueError("Erro de avaliação: Operador sem operandos suficientes")
+                b = stack.pop()
+                a = stack.pop()
+                result = self.apply_operator(a, b, node['value'])
+                stack.append(result)
+            elif node['type'] == 'Command':
+                if node['value'] == 'MEM':
+                    stack.append(self.convert_half_to_float(self.memory))
+                elif node['value'] == 'RES':
+                    if len(stack) < 1:
+                        raise ValueError("Erro de avaliação: Comando RES sem argumento")
+                    n = int(stack.pop())
+                    if n < len(self.results):
+                        stack.append(self.results[-(n+1)])
+                    else:
+                        raise ValueError(f"Erro: Não há {n} resultados anteriores")
+        
+        if len(stack) != 1:
+            raise ValueError("Erro de avaliação: Expressão mal formada")
+        
+        result = stack[0]
+        self.results.append(result)
+        return result
+
+    def apply_operator(self, a, b, operator):
+        """
+            Aplica operador aos operandos
         """
         if operator == '+':
             return a + b
@@ -181,247 +315,123 @@ class RPNCalculator:
             return a * b
         elif operator == '/':
             if b == 0:
-                raise ValueError("Error: Division by zero.")
-            return a / b
+                raise ValueError("Divisão por zero")
+            return a // b if isinstance(a, int) and isinstance(b, int) else a / b
         elif operator == '%':
+            if b == 0:
+                raise ValueError("Módulo por zero")
             return a % b
         elif operator == '^':
+            if not isinstance(b, int) or b < 0:
+                raise ValueError("Expoente deve ser inteiro positivo")
             return math.pow(a, b)
         elif operator == '|':
             return max(a, b)
         else:
-            raise ValueError(f"Error: Invalid operator '{operator}'")
-    
-    def tokenize_expression(self, expression):
+            raise ValueError(f"Operador desconhecido '{operator}'")
+
+    def print_ast(self, ast, level=0):
         """
-        Tokenizes the RPN expression, splitting it into its components (operators, operands, special commands).
+            Imprime a AST em formato canônico (árvore)
+        """
+        indent = "  " * level
+        if ast['type'] == 'Program':
+            print(f"{indent}Program")
+            for node in ast['body']:
+                self.print_ast(node, level + 1)
+        elif ast['type'] == 'Literal':
+            print(f"{indent}Literal({ast['value']})")
+        elif ast['type'] == 'Operator':
+            print(f"{indent}Operator({ast['value']})")
+        elif ast['type'] == 'Command':
+            print(f"{indent}Command({ast['value']})")
+
+    def generate_error_report(self, line_num, line, error_msg):
+        """
+            Gera um relatório de erro detalhado
+        """
+        print("=== Relatório de Erro ===")
+        print(f"Arquivo: {self.current_file}")
+        print(f"Linha: {line_num}")
+        print(f"Código: {line}")
+        print(f"Erro: {error_msg}")
+        print("Sugestões de correção:")
         
-        Parameters:
-            expression: RPN expression as a string
-        Returns:
-            List of tokens
-        """
-        tokens = []
-        i = 0
-        n = len(expression)
-        while i < n:
-            if expression[i].issapace():
-                i += 1
-                continue
-            if expression[i] in '()+-*/^%|':
-                tokens.append(expression[i])
-                i += 1
-                continue
-            if expression[i].isdigit() or expression[i] == '.':
-                start = i
-                has_decimal = False
-                while i < n and (expression[i].isdigit() or (expression[i] == '.' and not has_decimal)):
-                    if expression[i] == '.':
-                        has_decimal = True
-                    i += 1
-                tokens.append(expression[start:i])
-                continue
-            if expression[i].isalpha():
-                start = i
-                while i < n and expression[i].isalpha():
-                    i += 1
-                tokens.append(expression[start:i].upper())
-                continue
-            raise ValueError(f"Invalid character '{expression[i]}' at position {i}")
-        return tokens
-    
-    def process_input(self, path):
-        """
-            Processes individual files or directories.
-        """
-        if os.path.isfile(path):
-            if path.endswith('.txt'):
-                self.process_File(path)
+        if "Erro léxico" in error_msg:
+            if "Número com ponto decimal duplo" in error_msg:
+                print("- Remover o ponto decimal extra")
+            elif "Número termina com ponto" in error_msg:
+                print("- Completar a parte decimal ou remover o ponto")
+            elif "Comando desconhecido" in error_msg:
+                print("- Use apenas comandos RES ou MEM")
             else:
-                print(f"Error: '{path}' is not a .txt file")
-        elif os.path.isdir(path):
-            # Iterate through .txt files in the directory
-            for fname in os.listdir(path):
-                if fname.endswith('.txt'):
-                    full_path = os.path.join(path, fname)
-                    self.process_File(full_path)
-        else:
-            print(f"Error: '{path}' not found or is not valid")
-    
-    def process_File(self, filename):
+                print("- Verifique caracteres inválidos na expressão")
+        
+        elif "Erro sintático" in error_msg:
+            if "Esperado '('" in error_msg:
+                print("- Certifique-se que a expressão começa com '('")
+            elif "Esperado ')'" in error_msg:
+                print("- Certifique-se que a expressão termina com ')'")
+            elif "Fim inesperado" in error_msg:
+                print("- Expressão incompleta - verifique parênteses")
+            else:
+                print("- Verifique a estrutura da expressão RPN")
+        
+        print("=======================\n")
+
+    def process_file(self, filename):
         """
-            Processes a file containing RPN expressions (one per line).
-            Evaluates each expression and stores the result.
-            
-            Parameters:
-                filename: Path to the file to be processed
-            Returns:
-                List with the results of each expression in the file
+            Processa um arquivo de entrada
         """
-        print(f"---- File: {os.path.basename(filename)} ----\n")
+        self.current_file = filename
+        print(f"\n=== Processando arquivo: {filename} ===\n")
+        
         with open(filename, 'r') as f:
-            lines = f.readlines()
-            
-            for i, line in enumerate(lines):
+            for line_num, line in enumerate(f, 1):
                 line = line.strip()
-                if line:
-                    print(f"Expression {i+1}: {line}")
-                    # Show token string
-                    tok_list = self.lexical_analyzer(line)
-                    token_str = ' '.join([f"< {t['value']}, {t['type']}, {t['position']} >" for t in tok_list])
-                    print(f"Tokens: {token_str}")
-                    result = self.evaluate_expression(line)
+                if not line:
+                    continue
+                
+                print(f"Expressão {line_num}: {line}")
+                
+                try:
+                    # Análise léxica
+                    tokens = self.lexical_analyzer(line)
+                    print("\nTokens:")
+                    for token in tokens:
+                        print(f"  <{token['value']}, {token['type']}, linha {token['line']}, coluna {token['column']}>")
+                    
+                    # Análise sintática e geração de AST
+                    ast = self.syntactic_analyzer(tokens)
+                    print("\nÁrvore Sintática Abstrata (AST):")
+                    self.print_ast(ast)
+                    
+                    # Avaliação
+                    result = self.evaluate_ast(ast)
                     if result is not None:
-                        self.results.append(result)
-                        print(f"Result: {result}\n")
-    
-    def lexical_analyzer(self, expression):
-        """
-            Lexical Analyzer - Transforms the expression into tokens with additional information
-            Returns a list of dictionaries containing:
-            - 'value': token value
-            - 'type': token type (NUMBER, OPERATOR, PAREN, COMMAND)
-            - 'position': initial position within the expression
-        """
-        tokens = []
-        i = 0
-        n = len(expression)
-        
-        while i < n:
-            if expression[i].isspace():
-                i += 1
-                continue
-                
-            # Check for parentheses
-            if expression[i] in '()':
-                tokens.append({'value': expression[i], 'type': 'PAREN', 'position': i})
-                i += 1
-                continue
-                
-            # Check for operators
-            if expression[i] in '+-*/%|^':
-                tokens.append({'value': expression[i], 'type': 'OPERATOR', 'position': i})
-                i += 1
-                continue
-                
-            # Check for numbers (integers and decimals)
-            if expression[i].isdigit() or expression[i] == '.':
-                start = i
-                has_decimal = False
-                while i < n:
-                    if expression[i].isdigit():
-                        i += 1
-                    elif expression[i] == '.' and not has_decimal:
-                        has_decimal = True
-                        i += 1
-                    else:
-                        break
-                
-                # Check if the token is valid (does not end with a dot)
-                if expression[i-1] == '.':
-                    raise ValueError(f"Invalid number at position {start}")
-                
-                tokens.append({'value': expression[start:i],'type': 'NUMBER','position': start})
-                continue
-                
-            # Check for commands (RES, MEM)
-            if expression[i].isalpha():
-                start = i
-                while i < n and expression[i].isalpha():
-                    i += 1
-                token_value = expression[start:i].upper()
-                
-                if token_value in ('RES', 'MEM'):
-                    tokens.append({'value': token_value,'type': 'COMMAND','position': start})
-                else:
-                    raise ValueError(f"Unknown command '{token_value}' at position {start}")
-                continue
-            raise ValueError(f"Invalid character '{expression[i]}' at position {i}") 
-        return tokens
-    
-    def syntactic_analyzer(self, tokens):
-        """
-            Checks whether the token structure is valid.
-            Returns True if the syntax is correct, False otherwise.
-        """
-        stack = []
-        i = 0
-        n = len(tokens)
-        
-        def expect(token_type=None, token_value=None):
-            nonlocal i
-            if i >= n:
-                raise ValueError("Unexpected end of expression")
-            if token_type and tokens[i]['type'] != token_type:
-                raise ValueError(f"Expected {token_type}, found {tokens[i]['type']} at position {tokens[i]['position']}")
-            if token_value and tokens[i]['value'] != token_value:
-                raise ValueError(f"Expected '{token_value}', found '{tokens[i]['value']}' at position {tokens[i]['position']}")
-            i += 1
-        
-            try:
-                while i < n:
-                    if tokens[i]['value'] == '(':
-                        stack.append(tokens[i])
-                        expect('PAREN', '(')
-                        
-                        # Check if it's a special command
-                        if i + 2 < n and tokens[i]['type'] == 'NUMBER' and tokens[i+1]['type'] == 'COMMAND':
-                            expect('NUMBER')
-                            expect('COMMAND')
-                            expect('PAREN', ')')
-                            stack.pop()
-                            continue
-                        elif i + 1 < n and tokens[i]['type'] == 'COMMAND' and tokens[i]['value'] == 'MEM':
-                            expect('COMMAND', 'MEM')
-                            expect('PAREN', ')')
-                            stack.pop()
-                            continue
-                        
-                        # Otherwise, it's a normal expression
-                        # First operand (can be number or subexpression)
-                        if i < n and tokens[i]['type'] in ('NUMBER', 'PAREN'):
-                            if tokens[i]['value'] == '(':
-                                self.syntactic_analyzer(tokens[i:])
-                            else:
-                                expect('NUMBER')
-                        
-                        # Second operand
-                        if i < n and tokens[i]['type'] in ('NUMBER', 'PAREN'):
-                            if tokens[i]['value'] == '(':
-                                self.syntactic_analyzer(tokens[i:])
-                            else:
-                                expect('NUMBER')
-                        
-                        # Operator
-                        expect('OPERATOR')
-                        
-                        # Closing
-                        expect('PAREN', ')')
-                        stack.pop()
-                    else:
-                        i += 1
-                
-                if stack:
-                    raise ValueError(f"Unclosed parenthesis at position {stack[-1]['position']}")
-                
-                return True
-            except ValueError as e:
-                raise ValueError(f"Syntax error: {str(e)}")
-            
+                        print(f"\nResultado: {result}\n")
+                    
+                except ValueError as e:
+                    print(f"\nErro na linha {line_num}: {str(e)}\n")
+                    self.generate_error_report(line_num, line, str(e))
+
 def main():
-    """
-        Main function that coordinates program execution.
-        Processes the input file specified as a command-line argument,
-        evaluates the expressions, and generates the corresponding output.
-    """
+    if len(sys.argv) != 2:
+        print("Uso: python3 analisador_rpn.py <arquivo_entrada>")
+        sys.exit(1)
+    
+    input_path = sys.argv[1]
     calculator = RPNCalculator()
-
-    if len(sys.argv) > 1:
-        path = sys.argv[1]
-        calculator.process_input(path)
+    
+    if os.path.isfile(input_path):
+        if input_path.endswith('.txt'):
+            calculator.process_file(input_path)
+        else:
+            print("Erro: O arquivo deve ter extensão .txt")
+    elif os.path.isdir(input_path):
+        print("Erro: Por favor, especifique um arquivo, não um diretório")
     else:
-         print("Usage: python3 main.py <input_file>")
+        print(f"Erro: Arquivo ou diretório não encontrado: {input_path}")
 
-# Example usage:
 if __name__ == "__main__":
     main()
