@@ -40,16 +40,17 @@ FOLLOW(<OP_ARITMETICA>) = {')'}
 FOLLOW(<NUMERO>) = {'+', '-', '*', '|', '/', '%', '^', ')', 'MEM', 'RES', 'DE', 'ATE', 'PASSO', $}
 
 TABELA DE DERIVAÇÃO LL(1):
-| Não-Terminal | ( | NUMERO | + | - | * | | | / | % | ^ | MEM | RES | SE | ENTAO | SENAO | PARA | DE | ATE | PASSO | ) | $ |
-|--------------|---|--------|---|---|---|---|---|---|---|-----|-----|----|----|-------|------|----|----|-------|---|---|
-| Programa | Linha | Linha | | | | | | | | | | | | | | | | | | ε |
-| Linha | Expressao/IfDeclaracao/ForDeclaracao | Expressao | | | | | | | | | | | | | | | | | | |
-| Expressao | (Termo Termo OP_ARITMETICA)/ComandoEspecial | NUMERO | | | | | | | | | | | | | | | | | | |
-| Termo | Expressao | NUMERO | | | | | | | | | | | | | | | | | | |
-| ComandoEspecial | (MEM)/(NUMERO MEM)/(NUMERO RES) | | | | | | | | | | | | | | | | | | | |
-| IfDeclaracao | (SE Expressao ENTAO Expressao (SENAO Expressao)?) | | | | | | | | | | | | | | | | | | | |
-| ForDeclaracao | (PARA NUMERO DE NUMERO ATE NUMERO (PASSO NUMERO)? Expressao) | | | | | | | | | | | | | | | | | | | |
-| OP_ARITMETICA | | | + | - | * | | | / | % | ^ | | | | | | | | | | | |
+| Não-Terminal      | (                                                                | NUMERO                   | +   | -   | *   |     |     | /   | %   | ^   | MEM | RES | SE  | ENTAO | SENAO | PARA | DE  | ATE | PASSO | )   | $   |
+|--------------------|-----------------------------------------------------------------|--------------------------|-----|-----|-----|-----|-----|-----|-----|-----|-----|-----|-----|------|-------|------|-----|-----|-------|-----|-----|
+| Programa           | Linha                                                           | Linha                    |     |     |     |     |     |     |     |     |     |     |     |      |       |      |     |     |       |     | ε   |
+| Linha              | Expressao / IfDeclaracao / ForDeclaracao                        | Expressao                |     |     |     |     |     |     |     |     |     |     |     |      |       |      |     |     |       |     |     |
+| Expressao          | (Termo Termo OP_ARITMETICA) / ComandoEspecial                   | NUMERO                   |     |     |     |     |     |     |     |     |     |     |     |      |       |      |     |     |       |     |     |
+| Termo              | Expressao                                                       | NUMERO                   |     |     |     |     |     |     |     |     |     |     |     |      |       |      |     |     |       |     |     |
+| ComandoEspecial    | (MEM) / (NUMERO MEM) / (NUMERO RES)                             |                          |     |     |     |     |     |     |     |     |     |     |     |      |       |      |     |     |       |     |     |
+| IfDeclaracao       | (SE Expressao ENTAO Expressao (SENAO Expressao)?)               |                          |     |     |     |     |     |     |     |     |     |     |     |      |       |      |     |     |       |     |     |
+| ForDeclaracao      | (PARA NUMERO DE NUMERO ATE NUMERO (PASSO NUMERO)? Expressao)    |                          |     |     |     |     |     |     |     |     |     |     |     |      |       |      |     |     |       |     |     |
+| OP_ARITMETICA      |                                                                 |                          | +   | -   | *   |     |     | /   | %   | ^   |     |     |     |      |       |      |     |     |       |     |     |
+
 """
 
 import sys
