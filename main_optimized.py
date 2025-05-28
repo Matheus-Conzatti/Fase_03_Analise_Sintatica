@@ -5,6 +5,51 @@ Integrantes:
 1. André Ruan Cesar Dal Negro
 2. Felipe Abdullah
 3. Matheus Conzatti de Souza
+
+GRAMÁTICA FORMAL BNF:
+<Programa> ::= <Linha>*
+<Linha> ::= <Expressao> | <IfDeclaracao> | <ForDeclaracao>
+<Expressao> ::= '(' <Termo> <Termo> <OP_ARITMETICA> ')' | <ComandoEspecial> | <NUMERO>
+<Termo> ::= <Expressao> | <NUMERO>
+<ComandoEspecial> ::= '(' 'MEM' ')' | '(' <NUMERO> 'MEM' ')' | '(' <NUMERO> 'RES' ')'
+<IfDeclaracao> ::= '(' 'SE' <Expressao> 'ENTAO' <Expressao> ('SENAO' <Expressao>)? ')'
+<ForDeclaracao> ::= '(' 'PARA' <NUMERO> 'DE' <NUMERO> 'ATE' <NUMERO> ('PASSO' <NUMERO>)? <Expressao> ')'
+<OP_ARITMETICA> ::= '+' | '-' | '*' | '|' | '/' | '%' | '^'
+<NUMERO> ::= ['-']?[0-9]+('.'[0-9]+)?
+
+CONJUNTOS FIRST:
+FIRST(<Programa>) = {'(', NUMERO, ε}
+FIRST(<Linha>) = {'(', NUMERO}
+FIRST(<Expressao>) = {'(', NUMERO}
+FIRST(<Termo>) = {'(', NUMERO}
+FIRST(<ComandoEspecial>) = {'('}
+FIRST(<IfDeclaracao>) = {'('}
+FIRST(<ForDeclaracao>) = {'('}
+FIRST(<OP_ARITMETICA>) = {'+', '-', '*', '|', '/', '%', '^'}
+FIRST(<NUMERO>) = {NUMERO, '-'}
+
+CONJUNTOS FOLLOW:
+FOLLOW(<Programa>) = {$}
+FOLLOW(<Linha>) = {$, '(', NUMERO}
+FOLLOW(<Expressao>) = {')', $, '(', NUMERO}
+FOLLOW(<Termo>) = {'+', '-', '*', '|', '/', '%', '^', ')', NUMERO}
+FOLLOW(<ComandoEspecial>) = {')', $, '(', NUMERO}
+FOLLOW(<IfDeclaracao>) = {')', $, '(', NUMERO}
+FOLLOW(<ForDeclaracao>) = {')', $, '(', NUMERO}
+FOLLOW(<OP_ARITMETICA>) = {')'}
+FOLLOW(<NUMERO>) = {'+', '-', '*', '|', '/', '%', '^', ')', 'MEM', 'RES', 'DE', 'ATE', 'PASSO', $}
+
+TABELA DE DERIVAÇÃO LL(1):
+| Não-Terminal | ( | NUMERO | + | - | * | | | / | % | ^ | MEM | RES | SE | ENTAO | SENAO | PARA | DE | ATE | PASSO | ) | $ |
+|--------------|---|--------|---|---|---|---|---|---|---|-----|-----|----|----|-------|------|----|----|-------|---|---|
+| Programa | Linha | Linha | | | | | | | | | | | | | | | | | | ε |
+| Linha | Expressao/IfDeclaracao/ForDeclaracao | Expressao | | | | | | | | | | | | | | | | | | |
+| Expressao | (Termo Termo OP_ARITMETICA)/ComandoEspecial | NUMERO | | | | | | | | | | | | | | | | | | |
+| Termo | Expressao | NUMERO | | | | | | | | | | | | | | | | | | |
+| ComandoEspecial | (MEM)/(NUMERO MEM)/(NUMERO RES) | | | | | | | | | | | | | | | | | | | |
+| IfDeclaracao | (SE Expressao ENTAO Expressao (SENAO Expressao)?) | | | | | | | | | | | | | | | | | | | |
+| ForDeclaracao | (PARA NUMERO DE NUMERO ATE NUMERO (PASSO NUMERO)? Expressao) | | | | | | | | | | | | | | | | | | | |
+| OP_ARITMETICA | | | + | - | * | | | / | % | ^ | | | | | | | | | | | |
 """
 
 import sys
@@ -104,12 +149,18 @@ class RPNCalculator:
                 i += 1
                 continue
 
+            # Check for numbers (including negative numbers and decimals)
             if char.isdigit() or (char == '-' and i + 1 < n and expression[i+1].isdigit()):
                 start = i
                 if char == '-':
                     i += 1
                 while i < n and expression[i].isdigit():
                     i += 1
+                # Check for decimal point
+                if i < n and expression[i] == '.':
+                    i += 1
+                    while i < n and expression[i].isdigit():
+                        i += 1
                 tokens.append(expression[start:i])
                 continue
             if char in '+-*|/%^()':
@@ -133,7 +184,7 @@ class RPNCalculator:
             '+': lambda x, y: x + y,
             '-': lambda x, y: x - y,
             '*': lambda x, y: x * y,
-            '|': lambda x, y: float(x) / y if y != 0 else self._raise_zero_div("real"), # Still returns float for real division
+            '|': lambda x, y: float(x) / y if y != 0 else self._raise_zero_div("real"), # Real division returns float
             '/': lambda x, y: x // y if y != 0 else self._raise_zero_div("inteira"),
             '%': lambda x, y: x % y if y != 0 else self._raise_zero_div("módulo"),
             '^': lambda x, y: x ** y if y >= 0 else self._raise_exp_error()
@@ -175,18 +226,24 @@ class RPNCalculator:
         """Cria um nó de número."""
         token = self._current_token()
         try:
-            value = int(token)
-            if not (-32768 <= value <= 32767):
-                raise SyntaxError(f"Número '{value}' fora do range de 16-bit inteiro (-32768 a 32767).")
+            # Try to parse as float first to support both integers and decimals
+            if '.' in token:
+                value = float(token)
+            else:
+                value = int(token)
+                # Apply 16-bit integer range check only for integers
+                if not (-32768 <= value <= 32767):
+                    raise SyntaxError(f"Número inteiro '{value}' fora do range de 16-bit (-32768 a 32767).")
             self._advance()
             return NumberNode(value)
         except ValueError:
-            raise SyntaxError(f"Esperado número inteiro de 16 bits, encontrado '{token}'")
+            raise SyntaxError(f"Esperado número válido, encontrado '{token}'")
 
     def _is_number(self, token):
         """Verifica se o token é um número."""
         try:
-            int(token)
+            # Try to parse as float to support both integers and decimals
+            float(token)
             return True
         except ValueError:
             return False
