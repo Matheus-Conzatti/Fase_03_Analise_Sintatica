@@ -1,3 +1,0 @@
-(1 1 5 (SWAP DUP ROT * SWAP 1 +) FOR DROP)
-(0 1 6 (SWAP DUP ROT +) FOR DROP)
-((2 3 ^) (1 1 5 (1 + DUP ROT * SWAP) FOR DROP) + 2 /)
