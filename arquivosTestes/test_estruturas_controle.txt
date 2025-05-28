@@ -1,0 +1,37 @@
+# Teste de estruturas de controle (IF-THEN-ELSE e FOR)
+# Estruturas condicionais
+(SE (5 3 -) ENTAO 100 SENAO 200)
+(SE (3 3 -) ENTAO 100 SENAO 200)
+(SE (10 5 |) ENTAO (2 3 +) SENAO (4 5 *))
+(SE (0 RES) ENTAO (1 1 +) SENAO (2 2 *))
+
+# Estruturas de repetição
+(PARA 1 DE 1 ATE 3 (2 3 +))
+(PARA 1 DE 1 ATE 5 PASSO 2 (1 1 +))
+(PARA 2 DE 0 ATE 4 PASSO 1 (5 2 *))
+
+# Estruturas aninhadas
+(SE (PARA 1 DE 1 ATE 2 (1 1 +)) ENTAO 50 SENAO 60)
+((SE (2 1 -) ENTAO 3 SENAO 4) (PARA 1 DE 1 ATE 2 (2 2 +)) *)
+
+# Novos testes para estruturas de controle (16-bit integers)
+# IF aninhado
+(SE (10 5 -) ENTAO (SE (2 2 +) ENTAO 10 SENAO 20) SENAO 30)
+(SE (0 0 +) ENTAO 100 SENAO (SE (5 5 -) ENTAO 50 SENAO 75))
+
+# FOR com resultados e memória
+(10 MEM)
+(PARA 1 DE 1 ATE 3 ((MEM) 2 *))
+(0 RES)
+
+# FOR aninhado
+(PARA 1 DE 1 ATE 2 (PARA 2 DE 1 ATE 2 (1 1 +)))
+
+# Testes de limite de 16 bits
+(SE (32767 1 +) ENTAO 1 SENAO 0)
+(SE (-32768 1 -) ENTAO 1 SENAO 0)
+(SE (10 5 -) ENTAO 32767 SENAO (-32768))
+
+# Testes com zero
+(SE (0 MEM) ENTAO 1 SENAO 0)
+(PARA 1 DE 0 ATE 0 (10 5 /))
