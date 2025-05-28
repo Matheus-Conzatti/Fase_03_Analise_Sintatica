@@ -104,23 +104,18 @@ class RPNCalculator:
                 i += 1
                 continue
 
-            # Check for numbers (including negative numbers)
             if char.isdigit() or (char == '-' and i + 1 < n and expression[i+1].isdigit()):
                 start = i
-                if char == '-': # Consume the '-'
+                if char == '-':
                     i += 1
-                while i < n and expression[i].isdigit(): # Consume digits
+                while i < n and expression[i].isdigit():
                     i += 1
                 tokens.append(expression[start:i])
                 continue
-
-            # Check for operators and parentheses
-            if char in '+-*|/%^()': # '-' is handled above
+            if char in '+-*|/%^()':
                 tokens.append(char)
                 i += 1
                 continue
-
-            # Palavras-chave
             if char.isalpha():
                 start = i
                 while i < n and (expression[i].isalpha() or expression[i].isdigit()):
@@ -181,12 +176,11 @@ class RPNCalculator:
         token = self._current_token()
         try:
             value = int(token)
-            # Apply 16-bit integer range check
             if not (-32768 <= value <= 32767):
                 raise SyntaxError(f"Número '{value}' fora do range de 16-bit inteiro (-32768 a 32767).")
             self._advance()
             return NumberNode(value)
-        except ValueError: # Catch ValueError from int(token) conversion
+        except ValueError:
             raise SyntaxError(f"Esperado número inteiro de 16 bits, encontrado '{token}'")
 
     def _is_number(self, token):
@@ -207,13 +201,11 @@ class RPNCalculator:
             first = self._current_token()
             second = self.tokens[self.token_index + 1] if self.token_index + 1 < len(self.tokens) else None
 
-            # Estruturas de controle
             if first == 'SE':
                 return self._parse_if()
             elif first == 'PARA':
                 return self._parse_for()
 
-            # Comandos especiais
             if first == 'MEM':
                 self._expect('MEM')
                 self._expect(')')
@@ -227,13 +219,11 @@ class RPNCalculator:
 
                 return MemStoreNode(num_node) if keyword == 'MEM' else ResAccessNode(num_node)
 
-            # Handle (NUMBER) as an expression
             if self._is_number(first) and second == ')':
                 num_node = self._parse_number()
                 self._expect(')')
                 return num_node
 
-            # Operação binária
             left = self._parse_term()
             right = self._parse_term()
             operator = self._current_token()
@@ -256,7 +246,6 @@ class RPNCalculator:
         """Analisa termos."""
         current = self._current_token()
         if current == '(':
-            # Check if it's a control structure that can be used as a term
             next_token = self.tokens[self.token_index + 1] if self.token_index + 1 < len(self.tokens) else None
             if next_token == 'SE':
                 return self._parse_if()
@@ -293,14 +282,14 @@ class RPNCalculator:
         """Analisa declaração if-then-else."""
         self._expect('(')
         self._expect('SE')
-        condition = self._parse_term()  # Use _parse_term instead of _parse_expression
+        condition = self._parse_term()
         self._expect('ENTAO')
-        then_branch = self._parse_term()  # Use _parse_term instead of _parse_expression
+        then_branch = self._parse_term()
 
         else_branch = None
         if self._current_token() == 'SENAO':
             self._expect('SENAO')
-            else_branch = self._parse_term()  # Use _parse_term instead of _parse_expression
+            else_branch = self._parse_term()
 
         self._expect(')')
         return IfNode(condition, then_branch, else_branch)
@@ -320,7 +309,7 @@ class RPNCalculator:
             self._expect('PASSO')
             step_val = self._parse_number()
 
-        body = self._parse_term()  # Use _parse_term instead of _parse_expression
+        body = self._parse_term()
         self._expect(')')
         return ForNode(var_id, start_val, end_val, step_val, body)
 
@@ -392,19 +381,15 @@ class RPNCalculator:
         try:
             print(f"Expressão {self.current_line_num}: {self.current_line_content}")
 
-            # Tokenização
             self.tokens = self._tokenize(self.current_line_content)
             self.tokens.append('EOF')
             print(f"Tokens: {self.tokens}")
-
-            # Análise sintática
             ast = self._parse_line()
 
             print("\n--- Árvore Sintática Abstrata (AST) ---")
             self._print_ast(ast)
             print("----------------------------------------")
 
-            # Avaliação
             result = self._evaluate(ast)
             self.results.append(result)
             return result
@@ -441,7 +426,6 @@ class RPNCalculator:
         self.current_file = os.path.basename(filename)
         print(f"\n---- Processando Arquivo: {self.current_file} ----\n")
 
-        # Limpa estado por arquivo
         self.results = []
         self.memory = 0.0
 
